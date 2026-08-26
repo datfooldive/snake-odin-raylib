@@ -28,33 +28,32 @@ Particle :: struct {
 }
 
 Game :: struct {
-	snake:     [MAX_SNAKE]Vec2i,
-	len:       int,
-	dir, pend: Vec2i,
-	food:      Vec2i,
-	obs:       [MAX_OBS]Vec2i,
-	n_obs:     int,
-	level:     int,
-	eaten:     int,
-	target:    int, // lv1: 5, each next level +5
-	timer:     f32,
-	interval:  f32,
-	alive:     bool,
-	t:         f32, // clock for pulses
-	shake:     f32,
-	flash:     f32,
-	hue:       f32,
-	parts:     [MAX_PART]Particle,
-	np:        int,
-	energy:    int,
-	slow_t:    f32,
-	phase_t:   f32,
-	cd_slow:   f32,
-	cd_phase:  f32,
+	snake:    [MAX_SNAKE]Vec2i,
+	len:      int,
+	dir:      Vec2i,
+	q:        [2]Vec2i, // queued turns, max 2
+	qn:       int,
+	food:     Vec2i,
+	obs:      [MAX_OBS]Vec2i,
+	n_obs:    int,
+	level:    int,
+	eaten:    int,
+	target:   int, // lv1: 5, each next level +5
+	timer:    f32,
+	interval: f32,
+	alive:    bool,
+	t:        f32, // clock for pulses
+	shake:    f32,
+	flash:    f32,
+	hue:      f32,
+	parts:    [MAX_PART]Particle,
+	np:       int,
+	energy:   int,
+	slow_t:   f32,
+	phase_t:  f32,
+	cd_slow:  f32,
+	cd_phase: f32,
 }
-
-run: bool
-g: Game
 
 rnd :: proc(lo, hi: i32) -> i32 {
 	return i32(rl.GetRandomValue(c.int(lo), c.int(hi)))
@@ -82,15 +81,63 @@ occupied :: proc(g: ^Game, c: Vec2i) -> bool {
 	return false
 }
 
+try_turn :: proc(g: ^Game, d: Vec2i) {
+	last := g.dir
+	if g.qn > 0 {
+		last = g.q[g.qn - 1]
+	}
+	if (d.x != 0) == (last.x != 0) { 	// same axis: reversal or no-op
+		return
+	}
+	if g.qn < 2 {
+		g.q[g.qn] = d
+		g.qn += 1
+	}
+}
+
+reachable :: proc(g: ^Game) -> [COLS * ROWS]bool {
+	seen: [COLS * ROWS]bool
+	queue: [COLS * ROWS]Vec2i
+	h := g.snake[0]
+	seen[h.y * COLS + h.x] = true
+	queue[0] = h
+	qn := 1
+	dx := [4]i32{1, -1, 0, 0}
+	dy := [4]i32{0, 0, 1, -1}
+	for qn > 0 {
+		qn -= 1
+		c := queue[qn]
+		for k in 0 ..< 4 {
+			n := Vec2i{c.x + dx[k], c.y + dy[k]}
+			if n.x < 0 || n.x >= COLS || n.y < 0 || n.y >= ROWS {
+				continue
+			}
+			i := n.y * COLS + n.x
+			if seen[i] {
+				continue
+			}
+			blocked := occupied(g, n)
+			if blocked {
+				continue
+			}
+			seen[i] = true
+			queue[qn] = n
+			qn += 1
+		}
+	}
+	return seen
+}
+
 spawn_food :: proc(g: ^Game) {
+	ok := reachable(g)
 	for i in 0 ..< COLS * ROWS {
 		f := Vec2i{rnd(0, COLS - 1), rnd(0, ROWS - 1)}
-		if !occupied(g, f) {
+		if !occupied(g, f) && ok[f.y * COLS + f.x] {
 			g.food = f
 			return
 		}
 	}
-	die(g) // board full
+	die(g) // board full / nowhere reachable
 }
 
 build_level :: proc(g: ^Game) {
@@ -145,7 +192,6 @@ reset :: proc(g: ^Game) {
 		g.snake[i] = {cx - i32(i), cy}
 	}
 	g.dir = {1, 0}
-	g.pend = g.dir
 	g.alive = true
 	build_level(g)
 	spawn_food(g)
@@ -173,13 +219,19 @@ level_up :: proc(g: ^Game) {
 }
 
 step :: proc(g: ^Game) {
-	g.dir = g.pend
+	if g.qn > 0 {
+		g.dir = g.q[0]
+		g.q[0] = g.q[1]
+		g.qn -= 1
+	}
 	h := Vec2i{g.snake[0].x + g.dir.x, g.snake[0].y + g.dir.y}
 	phasing := g.phase_t > 0
+	eat := h == g.food
 
 	if phasing {
 		h.x = ((h.x % COLS) + COLS) % COLS
 		h.y = ((h.y % ROWS) + ROWS) % ROWS
+		eat = h == g.food // re-check after wrap
 	} else {
 		if h.x < 0 || h.x >= COLS || h.y < 0 || h.y >= ROWS {
 			die(g)
@@ -191,7 +243,9 @@ step :: proc(g: ^Game) {
 				return
 			}
 		}
-		for i in 0 ..< (g.len - 1) { 	// tail moves away this tick, skip it
+		// tail tip moves away this tick — unless eating, when it stays put
+		tail_free := 0 if eat else 1
+		for i in 0 ..< (g.len - tail_free) {
 			if g.snake[i] == h {
 				die(g)
 				return
@@ -199,7 +253,6 @@ step :: proc(g: ^Game) {
 		}
 	}
 
-	eat := h == g.food
 	if !eat {
 		g.len -= 1
 	}
@@ -229,7 +282,7 @@ update_parts :: proc(g: ^Game, dt: f32) {
 		if p.life <= 0 {
 			continue
 		}
-		p.life -= dt
+		p.life = math.max(0, p.life - dt)
 		p.vel.y += 380 * dt // gravity
 		p.vel = p.vel * (1 - 2.2 * dt) // drag
 		p.pos = p.pos + p.vel * dt
@@ -257,17 +310,17 @@ update_game :: proc(g: ^Game, dt: f32) {
 		return
 	}
 
-	if kp(.UP) && g.dir.y == 0 {
-		g.pend = {0, -1}
+	if kp(.UP) {
+		try_turn(g, {0, -1})
 	}
-	if kp(.DOWN) && g.dir.y == 0 {
-		g.pend = {0, 1}
+	if kp(.DOWN) {
+		try_turn(g, {0, 1})
 	}
-	if kp(.LEFT) && g.dir.x == 0 {
-		g.pend = {-1, 0}
+	if kp(.LEFT) {
+		try_turn(g, {-1, 0})
 	}
-	if kp(.RIGHT) && g.dir.x == 0 {
-		g.pend = {1, 0}
+	if kp(.RIGHT) {
+		try_turn(g, {1, 0})
 	}
 
 	if kp(.Q) && g.cd_slow <= 0 && g.energy >= COST {
@@ -302,6 +355,17 @@ skill_color :: proc(active, cd: f32, energy_ok: bool) -> rl.Color {
 	return {110, 110, 125, 255}
 }
 
+draw_skill :: proc(g: ^Game, x: c.int, label: cstring, active, cd: f32) {
+	col := skill_color(active, cd, g.energy >= COST)
+	t := c.int(math.ceil(math.max(cd, active)))
+	if t > 0 {
+		tag: cstring = "CD " if cd > active else ""
+		rl.DrawText(rl.TextFormat("%s %s%ds", label, tag, t), x, ROWS * CELL + 12, 20, col)
+	} else {
+		rl.DrawText(label, x, ROWS * CELL + 12, 20, col)
+	}
+}
+
 draw_hud :: proc(g: ^Game) {
 	hy: c.int = ROWS * CELL
 	rl.DrawRectangle(0, hy, W, HUD, {13, 12, 19, 255})
@@ -316,14 +380,8 @@ draw_hud :: proc(g: ^Game) {
 		rl.DrawRectangle(c.int(190 + i * 15), hy + 17, 10, 11, pip)
 	}
 
-	sc := skill_color(g.slow_t, g.cd_slow, g.energy >= COST)
-	pc := skill_color(g.phase_t, g.cd_phase, g.energy >= COST)
-	st := c.int(math.ceil(math.max(g.cd_slow, g.slow_t)))
-	pt := c.int(math.ceil(math.max(g.cd_phase, g.phase_t)))
-	sq := "CD " if g.cd_slow > g.slow_t else ""
-	eq := "CD " if g.cd_phase > g.phase_t else ""
-	rl.DrawText(rl.TextFormat("[Q] SLOW %s%ds", sq, st), 370, hy + 12, 20, sc)
-	rl.DrawText(rl.TextFormat("[E] PHASE %s%ds", eq, pt), 530, hy + 12, 20, pc)
+	draw_skill(g, 370, "[Q] SLOW", g.slow_t, g.cd_slow)
+	draw_skill(g, 530, "[E] PHASE", g.phase_t, g.cd_phase)
 }
 
 draw :: proc(g: ^Game) {
@@ -432,7 +490,11 @@ draw :: proc(g: ^Game) {
 	}
 }
 
-// Called once at startup, both desktop and web.
+// Web/desktop entry plumbing (see source/main_web/main_web.odin)
+
+run: bool
+g: Game
+
 init :: proc() {
 	run = true
 	rl.SetConfigFlags({.VSYNC_HINT})
@@ -441,7 +503,6 @@ init :: proc() {
 	reset(&g)
 }
 
-// Called once per frame, both desktop and web.
 update :: proc() {
 	update_game(&g, rl.GetFrameTime())
 	rl.BeginDrawing()
@@ -465,5 +526,4 @@ shutdown :: proc() {
 }
 
 // ponytail: fixed-size game, ignore browser resize
-parent_window_size_changed :: proc(w, h: int) {
-}
+parent_window_size_changed :: proc(w, h: int) {}
