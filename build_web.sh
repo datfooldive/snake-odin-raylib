@@ -1,6 +1,6 @@
 #!/bin/bash -eu
 
-EMSCRIPTEN_SDK_DIR="$HOME/emsdk"
+EMSCRIPTEN_SDK_DIR="${EMSDK:-$HOME/emsdk}"
 OUT_DIR="build/web"
 
 mkdir -p $OUT_DIR
