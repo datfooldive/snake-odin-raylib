@@ -5,7 +5,7 @@ import rl "vendor:raylib"
 CELL :: 24
 COLS :: 30
 ROWS :: 22
-HUD :: 44
+HUD :: 68
 W :: COLS * CELL
 H :: ROWS * CELL + HUD
 

@@ -38,6 +38,10 @@
             var odinMemoryInterface = new odin.WasmMemoryInterface();
             odinMemoryInterface.setIntSize(4);
             var odinImports = odin.setupDefaultImports(odinMemoryInterface);
+            odinImports.odin_env.load_high_score = () =>
+                Number.parseInt(localStorage.getItem("snake_high_score") || "0", 10) || 0;
+            odinImports.odin_env.save_high_score = (score) =>
+                localStorage.setItem("snake_high_score", String(score));
 
             // The Module is used as configuration for emscripten.
             var Module = {

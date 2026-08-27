@@ -85,7 +85,9 @@ draw_menu :: proc() {
 	if menu_button("[S] SETTINGS", 365) {
 		screen = .SETTINGS
 	}
-	rl.DrawText("Arrows move   Q slow   E phase", (W - rl.MeasureText("Arrows move   Q slow   E phase", 18)) / 2, 460, 18, rl.Color{145, 142, 165, 255})
+	best := rl.TextFormat("BEST SCORE %d", high_score)
+	rl.DrawText(best, (W - rl.MeasureText(best, 20)) / 2, 440, 20, rl.GOLD)
+	rl.DrawText("Arrows move   Q slow   E phase", (W - rl.MeasureText("Arrows move   Q slow   E phase", 18)) / 2, 480, 18, rl.Color{145, 142, 165, 255})
 }
 
 draw_settings :: proc() {

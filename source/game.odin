@@ -16,6 +16,7 @@ init :: proc() {
 	rl.SetExitKey(.KEY_NULL)
 	rl.SetTargetFPS(60)
 	ai_self_check()
+	load_score()
 	init_audio()
 }
 

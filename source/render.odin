@@ -19,20 +19,21 @@ draw_skill :: proc(g: ^Game, x: c.int, label: cstring, active, cd: f32) {
 	t := c.int(math.ceil(math.max(cd, active)))
 	if t > 0 {
 		tag: cstring = "CD " if cd > active else ""
-		rl.DrawText(rl.TextFormat("%s %s%ds", label, tag, t), x, ROWS * CELL + 12, 20, col)
+		rl.DrawText(rl.TextFormat("%s %s%ds", label, tag, t), x, ROWS * CELL + 40, 20, col)
 	} else {
-		rl.DrawText(label, x, ROWS * CELL + 12, 20, col)
+		rl.DrawText(label, x, ROWS * CELL + 40, 20, col)
 	}
 }
 
 draw_hud :: proc(g: ^Game) {
 	hy: c.int = ROWS * CELL
 	rl.DrawRectangle(0, hy, W, HUD, {13, 12, 19, 255})
-	rl.DrawText(rl.TextFormat("SCORE %d", g.score), 8, hy + 13, 18, rl.WHITE)
+	rl.DrawText(rl.TextFormat("SCORE %d", g.score), 8, hy + 8, 18, rl.WHITE)
+	rl.DrawText(rl.TextFormat("BEST %d", high_score), 250, hy + 8, 18, rl.GOLD)
 	if game_mode == .VERSUS {
-		rl.DrawText(rl.TextFormat("RACE %d-%d / %d", g.eaten, g.rival_eaten, g.target), 105, hy + 13, 18, rl.SKYBLUE)
+		rl.DrawText(rl.TextFormat("RACE %d-%d/%d", g.eaten, g.rival_eaten, g.target), 490, hy + 8, 18, rl.SKYBLUE)
 	} else {
-		rl.DrawText(rl.TextFormat("FOOD %d / %d", g.eaten, g.target), 110, hy + 13, 18, rl.SKYBLUE)
+		rl.DrawText(rl.TextFormat("FOOD %d/%d", g.eaten, g.target), 510, hy + 8, 18, rl.SKYBLUE)
 	}
 
 	for i in 0 ..< EMAX {
@@ -40,11 +41,11 @@ draw_hud :: proc(g: ^Game) {
 		if i < g.energy {
 			pip = rl.Color{250, 210, 80, 255}
 		}
-		rl.DrawRectangle(c.int(255 + i * 13), hy + 17, 9, 11, pip)
+		rl.DrawRectangle(c.int(8 + i * 13), hy + 44, 9, 11, pip)
 	}
 
-	draw_skill(g, 390, "[Q] SLOW", g.slow_t, g.cd_slow)
-	draw_skill(g, 545, "[E] PHASE", g.phase_t, g.cd_phase)
+	draw_skill(g, 250, "[Q] SLOW", g.slow_t, g.cd_slow)
+	draw_skill(g, 490, "[E] PHASE", g.phase_t, g.cd_phase)
 }
 
 draw :: proc(g: ^Game) {
