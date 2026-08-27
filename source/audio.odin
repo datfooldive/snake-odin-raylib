@@ -125,57 +125,73 @@ wav_bytes :: proc(pcm: []i16) -> []u8 {
 }
 
 make_bgm :: proc() -> []i16 {
-	bpm: f32 = 132
+	bpm: f32 = 116
 	beat := 60.0 / bpm
 	eighth := beat / 2
 	bars := 8
 	buf := make([]i16, int(f32(bars) * 4 * beat * SR))
 
-	// Bright C-major hook over C/F/Am/G.
+	// Warm G-major loop over G/D/Em/C with space between phrases.
 	lead := [64]i32{
-		64, 67, 72, 67, 64, 67, 72, 74,
-		76, 74, 72, 67, 69, 67, 64, -1,
-		65, 69, 72, 69, 65, 69, 72, 74,
-		76, 72, 69, 67, 69, 72, 74, -1,
-		69, 72, 76, 72, 69, 72, 76, 79,
-		76, 74, 72, 69, 67, 69, 72, -1,
-		67, 71, 74, 71, 67, 71, 74, 76,
-		79, 76, 74, 71, 72, 74, 72, -1,
+		67, -1, 71, 74, -1, 71, 69, -1,
+		66, 69, 74, -1, 76, 74, 69, -1,
+		67, 71, 76, -1, 74, 71, 67, -1,
+		64, 67, 72, -1, 74, 72, 67, -1,
+		71, 74, 79, -1, 78, 76, 74, -1,
+		69, 74, 78, -1, 81, 78, 74, -1,
+		71, 76, 79, -1, 78, 76, 74, -1,
+		72, 71, 69, 67, 69, 66, 67, -1,
 	}
 	for n, i in lead {
 		if n < 0 {
 			continue
 		}
 		f := m2f(n)
-		mix_into(buf, tone(eighth * 0.78, f, f, 0.13, true, 3.5), f32(i) * eighth)
-		mix_into(buf, tone(eighth * 0.7, f * 2, f * 2, 0.025, false, 5), f32(i) * eighth)
+		t := f32(i) * eighth
+		mix_into(buf, tone(eighth * 0.82, f, f, 0.12, false, 3), t)
+		mix_into(buf, tone(eighth * 0.72, f * 2, f * 2, 0.018, false, 5), t)
 	}
 
-	// Bouncy root/octave bass follows C/F/Am/G.
-	bass_root := [8]i32{48, 48, 41, 41, 45, 45, 43, 43}
+	// Soft chord bed keeps melody full without harsh square-wave buzz.
+	chords := [8][3]i32{
+		{55, 59, 62}, {50, 54, 57}, {52, 55, 59}, {48, 52, 55},
+		{55, 59, 62}, {50, 54, 57}, {52, 55, 59}, {48, 52, 55},
+	}
 	for b := 0; b < bars; b += 1 {
-		for e := 0; e < 8; e += 2 {
-			note := bass_root[b]
-			if e == 2 || e == 6 {
-				note += 12
-			}
-			f := m2f(note)
-			mix_into(buf, tone(beat * 0.65, f, f, 0.18, true, 4), f32(b * 8 + e) * eighth)
+		for n in chords[b] {
+			f := m2f(n)
+			mix_into(buf, tone(beat * 3.9, f, f, 0.022, false, 0.7), f32(b * 4) * beat)
 		}
 	}
 
-	// Light arcade beat; offbeat hats keep it moving.
+	// Syncopated root/octave bass follows G/D/Em/C.
+	bass_root := [8]i32{43, 38, 40, 36, 43, 38, 40, 36}
+	bass_steps := [5]int{0, 2, 3, 5, 7}
+	for b := 0; b < bars; b += 1 {
+		for e, i in bass_steps {
+			note := bass_root[b]
+			if i == 2 || i == 4 {
+				note += 12
+			}
+			f := m2f(note)
+			t := f32(b * 8 + e) * eighth
+			mix_into(buf, tone(eighth * 0.72, f, f, 0.15, false, 4), t)
+			mix_into(buf, tone(eighth * 0.65, f * 2, f * 2, 0.025, true, 5), t)
+		}
+	}
+
+	// Clean, light beat: soft kick and tiny offbeat shaker.
 	for b := 0; b < bars; b += 1 {
 		for e := 0; e < 8; e += 1 {
 			t := f32(b * 8 + e) * eighth
 			if e == 0 || e == 4 {
-				mix_into(buf, tone(0.11, 125, 48, 0.36, false, 9), t)
+				mix_into(buf, tone(0.12, 110, 45, 0.3, false, 9), t)
 			}
 			if e == 2 || e == 6 {
-				mix_into(buf, noise(0.055, 0.09, 12), t)
+				mix_into(buf, noise(0.045, 0.055, 14), t)
 			}
 			if e & 1 == 1 {
-				mix_into(buf, noise(0.022, 0.045, 16), t)
+				mix_into(buf, noise(0.018, 0.022, 18), t)
 			}
 		}
 	}
