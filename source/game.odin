@@ -199,6 +199,7 @@ reset :: proc(g: ^Game) {
 
 die :: proc(g: ^Game) {
 	g.alive = false
+	play(sfx_die)
 	g.shake = 0.7
 	for i in 0 ..< g.len {
 		c := rl.ColorFromHSV(g.hue + f32(i) * 2, 0.7, 0.95)
@@ -207,6 +208,7 @@ die :: proc(g: ^Game) {
 }
 
 level_up :: proc(g: ^Game) {
+	play(sfx_level)
 	g.level += 1
 	g.eaten = 0
 	g.target += 5
@@ -263,6 +265,7 @@ step :: proc(g: ^Game) {
 	g.len += 1
 
 	if eat {
+		play(sfx_eat)
 		g.eaten += 1
 		g.energy = min(EMAX, g.energy + 1)
 		g.hue = math.mod(g.hue + 37, 360)
@@ -327,11 +330,13 @@ update_game :: proc(g: ^Game, dt: f32) {
 		g.energy -= COST
 		g.slow_t = 4
 		g.cd_slow = 9
+		play(sfx_slow)
 	}
 	if kp(.E) && g.cd_phase <= 0 && g.energy >= COST {
 		g.energy -= COST
 		g.phase_t = 4
 		g.cd_phase = 9
+		play(sfx_phase)
 	}
 
 	gdt := d
@@ -500,10 +505,12 @@ init :: proc() {
 	rl.SetConfigFlags({.VSYNC_HINT})
 	rl.InitWindow(W, H, "snake — Q: slow-time  E: phase")
 	rl.SetTargetFPS(60)
+	init_audio()
 	reset(&g)
 }
 
 update :: proc() {
+	update_audio()
 	update_game(&g, rl.GetFrameTime())
 	rl.BeginDrawing()
 	draw(&g)
@@ -522,6 +529,9 @@ should_run :: proc() -> bool {
 }
 
 shutdown :: proc() {
+	if audio_ok {
+		rl.CloseAudioDevice()
+	}
 	rl.CloseWindow()
 }
 
