@@ -27,13 +27,29 @@ Particle :: struct {
 	col:             rl.Color,
 }
 
+Screen :: enum {
+	MENU,
+	SETTINGS,
+	PLAYING,
+}
+
+Game_Mode :: enum {
+	SINGLE,
+	VERSUS,
+}
+
 Game :: struct {
-	snake:    [MAX_SNAKE]Vec2i,
-	len:      int,
-	dir:      Vec2i,
-	q:        [2]Vec2i, // queued turns, max 2
-	qn:       int,
-	food:     Vec2i,
+	snake:        [MAX_SNAKE]Vec2i,
+	len:          int,
+	dir:          Vec2i,
+	q:            [2]Vec2i, // queued turns, max 2
+	qn:           int,
+	rival:        [MAX_SNAKE]Vec2i,
+	rival_len:    int,
+	rival_dir:    Vec2i,
+	rival_eaten:  int,
+	rival_won:    bool,
+	food:         Vec2i,
 	obs:      [MAX_OBS]Vec2i,
 	n_obs:    int,
 	level:    int,
@@ -73,6 +89,11 @@ occupied :: proc(g: ^Game, c: Vec2i) -> bool {
 			return true
 		}
 	}
+	for i in 0 ..< g.rival_len {
+		if g.rival[i] == c {
+			return true
+		}
+	}
 	for i in 0 ..< g.n_obs {
 		if g.obs[i] == c {
 			return true
@@ -93,6 +114,170 @@ try_turn :: proc(g: ^Game, d: Vec2i) {
 		g.q[g.qn] = d
 		g.qn += 1
 	}
+}
+
+in_bounds :: proc(p: Vec2i) -> bool {
+	return p.x >= 0 && p.x < COLS && p.y >= 0 && p.y < ROWS
+}
+
+rival_blocked :: proc(g: ^Game, p: Vec2i, tail_free: bool) -> bool {
+	if !in_bounds(p) {
+		return true
+	}
+	for i in 0 ..< g.n_obs {
+		if g.obs[i] == p {
+			return true
+		}
+	}
+	for i in 0 ..< g.len {
+		if g.snake[i] == p {
+			return true
+		}
+	}
+	limit := g.rival_len - (1 if tail_free else 0)
+	for i in 0 ..< limit {
+		if g.rival[i] == p {
+			return true
+		}
+	}
+	return false
+}
+
+rival_options :: proc(d: Vec2i) -> [3]Vec2i {
+	return {d, {d.y, -d.x}, {-d.y, d.x}} // straight, left, right
+}
+
+rival_space :: proc(g: ^Game, start: Vec2i) -> int {
+	seen: [COLS * ROWS]bool
+	queue: [COLS * ROWS]Vec2i
+	seen[start.y * COLS + start.x] = true
+	queue[0] = start
+	head, tail := 0, 1
+	dirs := [4]Vec2i{{1, 0}, {-1, 0}, {0, 1}, {0, -1}}
+	for head < tail {
+		p := queue[head]
+		head += 1
+		for d in dirs {
+			n := Vec2i{p.x + d.x, p.y + d.y}
+			if rival_blocked(g, n, true) {
+				continue
+			}
+			i := n.y * COLS + n.x
+			if seen[i] {
+				continue
+			}
+			seen[i] = true
+			queue[tail] = n
+			tail += 1
+		}
+	}
+	return tail
+}
+
+rival_turn :: proc(g: ^Game) -> (Vec2i, bool) {
+	head := g.rival[0]
+	queue: [COLS * ROWS]Vec2i
+	seen: [COLS * ROWS]bool
+	first: [COLS * ROWS]Vec2i
+	seen[head.y * COLS + head.x] = true
+	qn := 0
+
+	for d in rival_options(g.rival_dir) {
+		n := Vec2i{head.x + d.x, head.y + d.y}
+		if rival_blocked(g, n, n != g.food) {
+			continue
+		}
+		i := n.y * COLS + n.x
+		seen[i] = true
+		first[i] = d
+		queue[qn] = n
+		qn += 1
+	}
+
+	dirs := [4]Vec2i{{1, 0}, {-1, 0}, {0, 1}, {0, -1}}
+	for qi := 0; qi < qn; qi += 1 {
+		p := queue[qi]
+		pi := p.y * COLS + p.x
+		if p == g.food {
+			return first[pi], true
+		}
+		for d in dirs {
+			n := Vec2i{p.x + d.x, p.y + d.y}
+			if rival_blocked(g, n, true) {
+				continue
+			}
+			i := n.y * COLS + n.x
+			if seen[i] {
+				continue
+			}
+			seen[i] = true
+			first[i] = first[pi]
+			queue[qn] = n
+			qn += 1
+		}
+	}
+
+	// Food unreachable: choose safest legal turn by open area.
+	best, best_area, best_dist := Vec2i{}, -1, COLS + ROWS + 1
+	for d in rival_options(g.rival_dir) {
+		n := Vec2i{head.x + d.x, head.y + d.y}
+		if rival_blocked(g, n, n != g.food) {
+			continue
+		}
+		area := rival_space(g, n)
+		dist := int(math.abs(n.x - g.food.x) + math.abs(n.y - g.food.y))
+		if area > best_area || area == best_area && dist < best_dist {
+			best, best_area, best_dist = d, area, dist
+		}
+	}
+	return best, best_area >= 0
+}
+
+spawn_rival :: proc(g: ^Game) -> bool {
+	g.rival_len = 0
+	dirs := [4]Vec2i{{-1, 0}, {1, 0}, {0, -1}, {0, 1}}
+	for yi in 0 ..< ROWS {
+		y := i32((ROWS / 2 + yi) % ROWS)
+		for xi in 0 ..< COLS {
+			x := i32(COLS - 1 - xi)
+			for d in dirs {
+				body: [4]Vec2i
+				free := true
+				for i in 0 ..< 4 {
+					body[i] = {x - d.x * i32(i), y - d.y * i32(i)}
+					if !in_bounds(body[i]) || occupied(g, body[i]) || body[i] == g.food {
+						free = false
+						break
+					}
+				}
+				if free {
+					g.rival_len = 4
+					g.rival_dir = d
+					for i in 0 ..< 4 {
+						g.rival[i] = body[i]
+					}
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+ai_self_check :: proc() {
+	test := Game{}
+	test.len = 1
+	test.snake[0] = {20, 20}
+	test.rival_len = 2
+	test.rival[0] = {5, 5}
+	test.rival[1] = {4, 5}
+	test.rival_dir = {1, 0}
+	test.food = {5, 3}
+	d, ok := rival_turn(&test)
+	assert(ok && d == Vec2i{0, -1}, "rival must turn toward reachable food")
+	test.obs[0], test.n_obs = {5, 4}, 1
+	d, ok = rival_turn(&test)
+	assert(ok && d != Vec2i{0, -1}, "rival must avoid obstacle")
 }
 
 reachable :: proc(g: ^Game) -> [COLS * ROWS]bool {
@@ -148,7 +333,8 @@ build_level :: proc(g: ^Game) {
 		attempts += 1
 		c := Vec2i{rnd(0, COLS - 1), rnd(0, ROWS - 1)}
 		head := g.snake[0]
-		if !occupied(g, c) && math.abs(c.x - head.x) + math.abs(c.y - head.y) > 4 {
+		rival_far := g.rival_len == 0 || math.abs(c.x - g.rival[0].x) + math.abs(c.y - g.rival[0].y) > 4
+		if !occupied(g, c) && math.abs(c.x - head.x) + math.abs(c.y - head.y) > 4 && rival_far {
 			g.obs[g.n_obs] = c
 			g.n_obs += 1
 			n -= 1
@@ -186,6 +372,9 @@ reset :: proc(g: ^Game) {
 	g.target = 5
 	g.interval = 0.15
 	cx: i32 = COLS / 2
+	if game_mode == .VERSUS {
+		cx = COLS / 4
+	}
 	cy: i32 = ROWS / 2
 	g.len = 4
 	for i in 0 ..< 4 {
@@ -193,6 +382,9 @@ reset :: proc(g: ^Game) {
 	}
 	g.dir = {1, 0}
 	g.alive = true
+	if game_mode == .VERSUS {
+		spawn_rival(g)
+	}
 	build_level(g)
 	spawn_food(g)
 }
@@ -211,8 +403,13 @@ level_up :: proc(g: ^Game) {
 	play(sfx_level)
 	g.level += 1
 	g.eaten = 0
+	g.rival_eaten = 0
 	g.target += 5
 	g.interval = math.max(0.055, 0.15 * math.pow(0.93, f32(g.level - 1)))
+	g.n_obs = 0
+	if game_mode == .VERSUS {
+		spawn_rival(g)
+	}
 	build_level(g)
 	g.flash = 0.45
 	g.shake = 0.55
@@ -245,6 +442,12 @@ step :: proc(g: ^Game) {
 				return
 			}
 		}
+		for i in 0 ..< g.rival_len {
+			if g.rival[i] == h {
+				die(g)
+				return
+			}
+		}
 		// tail tip moves away this tick — unless eating, when it stays put
 		tail_free := 0 if eat else 1
 		for i in 0 ..< (g.len - tail_free) {
@@ -273,6 +476,43 @@ step :: proc(g: ^Game) {
 		burst(g, center(g.food), rl.ColorFromHSV(g.hue, 0.8, 1), 45, 280)
 		if g.eaten >= g.target {
 			level_up(g)
+		}
+		spawn_food(g)
+	}
+}
+
+step_rival :: proc(g: ^Game) {
+	if g.rival_len == 0 {
+		spawn_rival(g)
+		return
+	}
+	d, safe := rival_turn(g)
+	if !safe {
+		burst(g, center(g.rival[0]), rl.ORANGE, 30, 220)
+		spawn_rival(g)
+		return
+	}
+	g.rival_dir = d
+	h := Vec2i{g.rival[0].x + d.x, g.rival[0].y + d.y}
+	eat := h == g.food
+	if !eat {
+		g.rival_len -= 1
+	}
+	for i := g.rival_len; i > 0; i -= 1 {
+		g.rival[i] = g.rival[i - 1]
+	}
+	g.rival[0] = h
+	g.rival_len += 1
+
+	if eat {
+		play(sfx_eat)
+		g.rival_eaten += 1
+		g.shake = math.max(g.shake, 0.2)
+		burst(g, center(g.food), rl.ORANGE, 35, 240)
+		if g.rival_eaten >= g.target {
+			g.rival_won = true
+			die(g)
+			return
 		}
 		spawn_food(g)
 	}
@@ -347,6 +587,9 @@ update_game :: proc(g: ^Game, dt: f32) {
 	for g.timer >= g.interval && g.alive {
 		g.timer -= g.interval
 		step(g)
+		if g.alive && game_mode == .VERSUS {
+			step_rival(g)
+		}
 	}
 }
 
@@ -374,19 +617,25 @@ draw_skill :: proc(g: ^Game, x: c.int, label: cstring, active, cd: f32) {
 draw_hud :: proc(g: ^Game) {
 	hy: c.int = ROWS * CELL
 	rl.DrawRectangle(0, hy, W, HUD, {13, 12, 19, 255})
-	rl.DrawText(rl.TextFormat("LV %d", g.level), 12, hy + 12, 20, rl.WHITE)
-	rl.DrawText(rl.TextFormat("%d / %d", g.eaten, g.target), 90, hy + 12, 20, rl.SKYBLUE)
+	rl.DrawText(rl.TextFormat("LV %d", g.level), 8, hy + 13, 18, rl.WHITE)
+	if game_mode == .VERSUS {
+		rl.DrawText(rl.TextFormat("YOU %d", g.eaten), 65, hy + 13, 18, rl.SKYBLUE)
+		rl.DrawText(rl.TextFormat("CPU %d", g.rival_eaten), 135, hy + 13, 18, rl.ORANGE)
+		rl.DrawText(rl.TextFormat("/ %d", g.target), 205, hy + 13, 18, rl.WHITE)
+	} else {
+		rl.DrawText(rl.TextFormat("FOOD %d / %d", g.eaten, g.target), 75, hy + 13, 18, rl.SKYBLUE)
+	}
 
 	for i in 0 ..< EMAX {
 		pip := rl.Color{55, 55, 65, 255}
 		if i < g.energy {
 			pip = rl.Color{250, 210, 80, 255}
 		}
-		rl.DrawRectangle(c.int(190 + i * 15), hy + 17, 10, 11, pip)
+		rl.DrawRectangle(c.int(255 + i * 13), hy + 17, 9, 11, pip)
 	}
 
-	draw_skill(g, 370, "[Q] SLOW", g.slow_t, g.cd_slow)
-	draw_skill(g, 530, "[E] PHASE", g.phase_t, g.cd_phase)
+	draw_skill(g, 390, "[Q] SLOW", g.slow_t, g.cd_slow)
+	draw_skill(g, 545, "[E] PHASE", g.phase_t, g.cd_phase)
 }
 
 draw :: proc(g: ^Game) {
@@ -433,7 +682,27 @@ draw :: proc(g: ^Game) {
 	rl.DrawCircleV(fp, pr + 2, rl.GOLD)
 	rl.DrawCircleV({fp.x - 2, fp.y - 2}, 2, rl.Color{255, 245, 200, 255})
 
-	// snake, gradient tail -> head
+	// rival snake
+	for i := g.rival_len - 1; i >= 0; i -= 1 {
+		p := center(g.rival[i])
+		v := 1.0 - f32(i) / f32(g.rival_len)
+		col := rl.Color{255, u8(80 + 100 * v), u8(35 + 30 * v), 255}
+		inset: f32 = 2 if i != 0 else 1
+		rl.DrawRectangleV(
+			{p.x - CELL / 2 + inset, p.y - CELL / 2 + inset},
+			{CELL - inset * 2, CELL - inset * 2},
+			col,
+		)
+	}
+	if g.rival_len > 0 {
+		rd := rl.Vector2{f32(g.rival_dir.x), f32(g.rival_dir.y)}
+		rs := rl.Vector2{-rd.y, rd.x}
+		rh := center(g.rival[0])
+		rl.DrawCircleV(rh + rd * 5 + rs * 4.5, 2.6, rl.BLACK)
+		rl.DrawCircleV(rh + rd * 5 - rs * 4.5, 2.6, rl.BLACK)
+	}
+
+	// player snake, gradient tail -> head
 	phasing := g.phase_t > 0
 	for i := g.len - 1; i >= 0; i -= 1 {
 		p := center(g.snake[i])
@@ -489,31 +758,130 @@ draw :: proc(g: ^Game) {
 	if !g.alive {
 		rl.DrawRectangle(0, 0, W, H, rl.Fade(rl.BLACK, 0.55))
 		msg := rl.TextFormat("GAME OVER — reached LV %d", g.level)
+		if g.rival_won {
+			msg = rl.TextFormat("RIVAL WINS — %d / %d", g.rival_eaten, g.target)
+		}
 		sub: cstring = "[R] restart"
 		rl.DrawText(msg, (W - rl.MeasureText(msg, 44)) / 2, H / 2 - 50, 44, rl.RED)
 		rl.DrawText(sub, (W - rl.MeasureText(sub, 22)) / 2, H / 2 + 10, 22, rl.WHITE)
 	}
 }
 
+menu_button :: proc(label: cstring, y: c.int) -> bool {
+	r := rl.Rectangle{W / 2 - 140, f32(y), 280, 48}
+	hover := rl.CheckCollisionPointRec(rl.GetMousePosition(), r)
+	rl.DrawRectangleRec(r, rl.Color{45, 42, 66, 255} if hover else rl.Color{31, 29, 47, 255})
+	rl.DrawRectangleLinesEx(r, 2, rl.SKYBLUE if hover else rl.Color{85, 82, 110, 255})
+	w := rl.MeasureText(label, 24)
+	rl.DrawText(label, (W - w) / 2, y + 12, 24, rl.WHITE)
+	return hover && rl.IsMouseButtonPressed(.LEFT)
+}
+
+start_game :: proc(mode: Game_Mode) {
+	game_mode = mode
+	reset(&g)
+	screen = .PLAYING
+}
+
+update_menu :: proc() {
+	if rl.IsKeyPressed(.ONE) {
+		start_game(.SINGLE)
+	}
+	if rl.IsKeyPressed(.TWO) {
+		start_game(.VERSUS)
+	}
+	if rl.IsKeyPressed(.S) {
+		screen = .SETTINGS
+	}
+}
+
+update_settings :: proc() {
+	if rl.IsKeyPressed(.B) {
+		set_bgm(!bgm_on)
+	}
+	if rl.IsKeyPressed(.F) {
+		sfx_on = !sfx_on
+	}
+	if rl.IsKeyPressed(.ESCAPE) {
+		screen = .MENU
+	}
+}
+
+draw_title :: proc() {
+	rl.DrawText("SNAKE", (W - rl.MeasureText("SNAKE", 68)) / 2, 76, 68, rl.GOLD)
+	rl.DrawText("eat, grow, survive", (W - rl.MeasureText("eat, grow, survive", 22)) / 2, 150, 22, rl.SKYBLUE)
+}
+
+draw_menu :: proc() {
+	rl.ClearBackground({18, 17, 27, 255})
+	draw_title()
+	if menu_button("[1] SINGLE", 235) {
+		start_game(.SINGLE)
+	}
+	if menu_button("[2] VERSUS AI", 300) {
+		start_game(.VERSUS)
+	}
+	if menu_button("[S] SETTINGS", 365) {
+		screen = .SETTINGS
+	}
+	rl.DrawText("Arrows move   Q slow   E phase", (W - rl.MeasureText("Arrows move   Q slow   E phase", 18)) / 2, 460, 18, rl.Color{145, 142, 165, 255})
+}
+
+draw_settings :: proc() {
+	rl.ClearBackground({18, 17, 27, 255})
+	draw_title()
+	rl.DrawText("SETTINGS", (W - rl.MeasureText("SETTINGS", 32)) / 2, 205, 32, rl.WHITE)
+	bgm_label: cstring = "[B] BGM: OFF" if !bgm_on else "[B] BGM: ON"
+	sfx_label: cstring = "[F] SFX: OFF" if !sfx_on else "[F] SFX: ON"
+	if menu_button(bgm_label, 275) {
+		set_bgm(!bgm_on)
+	}
+	if menu_button(sfx_label, 340) {
+		sfx_on = !sfx_on
+	}
+	if menu_button("[ESC] BACK", 420) {
+		screen = .MENU
+	}
+}
+
 // Web/desktop entry plumbing (see source/main_web/main_web.odin)
 
-run: bool
-g: Game
+run:       bool
+g:         Game
+screen:    Screen = .MENU
+game_mode: Game_Mode = .SINGLE
 
 init :: proc() {
 	run = true
 	rl.SetConfigFlags({.VSYNC_HINT})
 	rl.InitWindow(W, H, "snake — Q: slow-time  E: phase")
+	rl.SetExitKey(.KEY_NULL)
 	rl.SetTargetFPS(60)
+	ai_self_check()
 	init_audio()
-	reset(&g)
 }
 
 update :: proc() {
 	update_audio()
-	update_game(&g, rl.GetFrameTime())
+	if screen == .MENU {
+		update_menu()
+	} else if screen == .SETTINGS {
+		update_settings()
+	} else {
+		if rl.IsKeyPressed(.ESCAPE) {
+			screen = .MENU
+		} else {
+			update_game(&g, rl.GetFrameTime())
+		}
+	}
 	rl.BeginDrawing()
-	draw(&g)
+	if screen == .MENU {
+		draw_menu()
+	} else if screen == .SETTINGS {
+		draw_settings()
+	} else {
+		draw(&g)
+	}
 	rl.EndDrawing()
 }
 

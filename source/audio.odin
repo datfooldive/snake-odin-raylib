@@ -18,6 +18,8 @@ bgm:     rl.Music
 bgm_wav: []u8 // must stay alive, Music streams from it
 
 audio_ok: bool
+bgm_on:  bool = true
+sfx_on:  bool = true
 
 m2f :: proc(n: i32) -> f32 {
 	return 440 * math.pow(2, (f32(n) - 69) / 12)
@@ -217,19 +219,33 @@ init_audio :: proc() {
 	bgm = rl.LoadMusicStreamFromMemory(".wav", &bgm_wav[0], c.int(len(bgm_wav)))
 	bgm.looping = true
 	rl.SetMusicVolume(bgm, 0.35)
-	rl.PlayMusicStream(bgm)
+	if bgm_on {
+		rl.PlayMusicStream(bgm)
+	}
 
 	audio_ok = true
 }
 
+set_bgm :: proc(on: bool) {
+	bgm_on = on
+	if !audio_ok {
+		return
+	}
+	if on {
+		rl.ResumeMusicStream(bgm)
+	} else {
+		rl.PauseMusicStream(bgm)
+	}
+}
+
 play :: proc(s: rl.Sound) {
-	if audio_ok {
+	if audio_ok && sfx_on {
 		rl.PlaySound(s)
 	}
 }
 
 update_audio :: proc() {
-	if audio_ok {
+	if audio_ok && bgm_on {
 		rl.UpdateMusicStream(bgm)
 	}
 }
