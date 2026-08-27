@@ -25,12 +25,12 @@ update :: proc() {
 		update_menu()
 	} else if screen == .SETTINGS {
 		update_settings()
+	} else if screen == .PAUSED {
+		update_pause()
+	} else if rl.IsKeyPressed(.ESCAPE) {
+		screen = .PAUSED
 	} else {
-		if rl.IsKeyPressed(.ESCAPE) {
-			screen = .MENU
-		} else {
-			update_game(&g, rl.GetFrameTime())
-		}
+		update_game(&g, rl.GetFrameTime())
 	}
 	rl.BeginDrawing()
 	if screen == .MENU {
@@ -39,6 +39,9 @@ update :: proc() {
 		draw_settings()
 	} else {
 		draw(&g)
+		if screen == .PAUSED {
+			draw_pause()
+		}
 	}
 	rl.EndDrawing()
 }

@@ -51,6 +51,23 @@ update_settings :: proc() {
 	}
 }
 
+restart_game :: proc() {
+	reset(&g)
+	screen = .PLAYING
+}
+
+update_pause :: proc() {
+	if rl.IsKeyPressed(.ESCAPE) {
+		screen = .PLAYING
+	}
+	if rl.IsKeyPressed(.R) {
+		restart_game()
+	}
+	if rl.IsKeyPressed(.M) {
+		screen = .MENU
+	}
+}
+
 draw_title :: proc() {
 	rl.DrawText("SNAKE", (W - rl.MeasureText("SNAKE", 68)) / 2, 76, 68, rl.GOLD)
 	rl.DrawText("eat, grow, survive", (W - rl.MeasureText("eat, grow, survive", 22)) / 2, 150, 22, rl.SKYBLUE)
@@ -84,6 +101,20 @@ draw_settings :: proc() {
 		toggle_sfx()
 	}
 	if menu_button("[ESC] BACK", 420) {
+		screen = .MENU
+	}
+}
+
+draw_pause :: proc() {
+	rl.DrawRectangle(0, 0, W, H, rl.Fade(rl.BLACK, 0.72))
+	rl.DrawText("PAUSED", (W - rl.MeasureText("PAUSED", 46)) / 2, 150, 46, rl.GOLD)
+	if menu_button("[ESC] RESUME", 235) {
+		screen = .PLAYING
+	}
+	if menu_button("[R] RESTART", 300) {
+		restart_game()
+	}
+	if menu_button("[M] MAIN MENU", 365) {
 		screen = .MENU
 	}
 }

@@ -31,6 +31,7 @@ Screen :: enum {
 	MENU,
 	SETTINGS,
 	PLAYING,
+	PAUSED,
 }
 
 Game_Mode :: enum {
