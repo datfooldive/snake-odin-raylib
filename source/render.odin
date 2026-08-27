@@ -28,13 +28,11 @@ draw_skill :: proc(g: ^Game, x: c.int, label: cstring, active, cd: f32) {
 draw_hud :: proc(g: ^Game) {
 	hy: c.int = ROWS * CELL
 	rl.DrawRectangle(0, hy, W, HUD, {13, 12, 19, 255})
-	rl.DrawText(rl.TextFormat("LV %d", g.level), 8, hy + 13, 18, rl.WHITE)
+	rl.DrawText(rl.TextFormat("SCORE %d", g.score), 8, hy + 13, 18, rl.WHITE)
 	if game_mode == .VERSUS {
-		rl.DrawText(rl.TextFormat("YOU %d", g.eaten), 65, hy + 13, 18, rl.SKYBLUE)
-		rl.DrawText(rl.TextFormat("CPU %d", g.rival_eaten), 135, hy + 13, 18, rl.ORANGE)
-		rl.DrawText(rl.TextFormat("/ %d", g.target), 205, hy + 13, 18, rl.WHITE)
+		rl.DrawText(rl.TextFormat("RACE %d-%d / %d", g.eaten, g.rival_eaten, g.target), 105, hy + 13, 18, rl.SKYBLUE)
 	} else {
-		rl.DrawText(rl.TextFormat("FOOD %d / %d", g.eaten, g.target), 75, hy + 13, 18, rl.SKYBLUE)
+		rl.DrawText(rl.TextFormat("FOOD %d / %d", g.eaten, g.target), 110, hy + 13, 18, rl.SKYBLUE)
 	}
 
 	for i in 0 ..< EMAX {
@@ -168,9 +166,9 @@ draw :: proc(g: ^Game) {
 
 	if !g.alive {
 		rl.DrawRectangle(0, 0, W, H, rl.Fade(rl.BLACK, 0.55))
-		msg := rl.TextFormat("GAME OVER — reached LV %d", g.level)
+		msg := rl.TextFormat("GAME OVER — SCORE %d", g.score)
 		if g.rival_won {
-			msg = rl.TextFormat("RIVAL WINS — %d / %d", g.rival_eaten, g.target)
+			msg = rl.TextFormat("RIVAL WINS — SCORE %d", g.score)
 		}
 		sub: cstring = "[R] restart"
 		rl.DrawText(msg, (W - rl.MeasureText(msg, 44)) / 2, H / 2 - 50, 44, rl.RED)

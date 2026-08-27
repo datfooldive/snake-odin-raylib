@@ -54,6 +54,7 @@ Game :: struct {
 	obs:      [MAX_OBS]Vec2i,
 	n_obs:    int,
 	level:    int,
+	score:    int,
 	eaten:    int,
 	target:   int, // lv1: 5, each next level +5
 	timer:    f32,

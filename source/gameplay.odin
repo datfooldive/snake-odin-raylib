@@ -236,6 +236,7 @@ step :: proc(g: ^Game) {
 
 	if eat {
 		play(sfx_eat)
+		g.score += 1
 		g.eaten += 1
 		g.energy = min(EMAX, g.energy + 1)
 		g.hue = math.mod(g.hue + 37, 360)
